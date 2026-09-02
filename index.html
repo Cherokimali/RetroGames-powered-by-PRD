@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>MAISUG/DDS VS LOSERS</title>
+<title>MAISUG/DDS: LABAN SA KORAPSYON</title>
 <meta property="og:type" content="website">
-<meta property="og:title" content="MAISUG/DDS VS LOSERS">
-<meta property="og:description" content="Play now — retro Atari-style space shooter. Rotate, thrust, and blast your way through the asteroid waves!">
+<meta property="og:title" content="MAISUG/DDS: LABAN SA KORAPSYON">
+<meta property="og:description" content="Pilot Maisug/DDS and blast through the corrupt system. Rotate, thrust, and fight back wave after wave.">
 <meta property="og:image" content="https://cherokimali.github.io/RetroGames-powered-by-PRD/thumbnail.png">
 <meta property="og:url" content="https://cherokimali.github.io/RetroGames-powered-by-PRD/">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="MAISUG/DDS VS LOSERS">
-<meta name="twitter:description" content="Play now — retro Atari-style space shooter.">
+<meta name="twitter:title" content="MAISUG/DDS: LABAN SA KORAPSYON">
+<meta name="twitter:description" content="Pilot Maisug/DDS and blast through the corrupt system.">
 <meta name="twitter:image" content="https://cherokimali.github.io/RetroGames-powered-by-PRD/thumbnail.png">
 <style>
   html, body {
@@ -88,10 +88,20 @@
     -webkit-user-select: none;
   }
   #touchControls.active { display: flex; }
-  .touchGroup {
-    display: flex;
-    gap: 10px;
+  .dpad {
+    display: grid;
+    grid-template-columns: 60px 60px 60px;
+    grid-template-rows: 60px 60px;
+    gap: 6px;
+    justify-content: center;
   }
+  .dpadMid {
+    grid-column: 1 / span 3;
+    display: flex;
+    justify-content: space-between;
+  }
+  .dpadUp { grid-column: 2; grid-row: 1; }
+  .dpadDown { grid-column: 2; grid-row: 2; }
   .touchBtn {
     width: 60px;
     height: 60px;
@@ -120,6 +130,23 @@
   #fireBtn:active, #fireBtn.pressed {
     background: rgba(255,107,0,0.35);
   }
+  #tapOverlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: #39ff14;
+    font-size: 16px;
+    letter-spacing: 1px;
+    text-shadow: 0 0 10px #39ff14;
+    z-index: 10;
+    padding: 20px;
+    box-sizing: border-box;
+  }
+  #tapOverlay.active { display: flex; }
   @media (max-width: 480px) {
     h1 { font-size: 14px; }
     #hud { font-size: 13px; }
@@ -129,7 +156,7 @@
 </head>
 <body>
 <div id="wrap">
-  <h1>&#9608; MAISUG/DDS VS LOSERS &#9608;</h1>
+  <h1>&#9608; MAISUG/DDS: LABAN SA KORAPSYON &#9608;</h1>
   <div id="hud">
     <div>SCORE: <span id="score">0</span></div>
     <div>LIVES: <span id="lives">3</span></div>
@@ -137,13 +164,17 @@
   </div>
   <div id="canvasWrap">
     <canvas id="game" width="640" height="480"></canvas>
+    <div id="tapOverlay">TAP TO START<br>(enables sound)</div>
   </div>
-  <div id="msg">&larr; &rarr; ROTATE &nbsp;|&nbsp; &uarr; THRUST &nbsp;|&nbsp; SPACE TO FIRE</div>
+  <div id="msg">ARROW KEYS TO MOVE &nbsp;|&nbsp; SPACE TO FIRE</div>
   <div id="touchControls">
-    <div class="touchGroup">
-      <div class="touchBtn" id="leftBtn">&#9664;</div>
-      <div class="touchBtn" id="rightBtn">&#9654;</div>
-      <div class="touchBtn" id="thrustBtn">&#9650;</div>
+    <div class="dpad">
+      <div class="touchBtn dpadUp" id="upBtn">&#9650;</div>
+      <div class="dpadMid">
+        <div class="touchBtn dpadSide" id="leftBtn">&#9664;</div>
+        <div class="touchBtn dpadSide" id="rightBtn">&#9654;</div>
+      </div>
+      <div class="touchBtn dpadDown" id="downBtn">&#9660;</div>
     </div>
     <div class="touchBtn" id="fireBtn">FIRE</div>
   </div>
@@ -332,7 +363,7 @@ function isTouchDevice() {
 if (isTouchDevice()) {
   const touchControls = document.getElementById('touchControls');
   touchControls.classList.add('active');
-  msgEl.textContent = 'TAP ▲ TO THRUST, ◀ ▶ TO ROTATE, FIRE TO SHOOT';
+  msgEl.textContent = 'USE THE D-PAD TO MOVE, FIRE TO SHOOT';
  
   function bindHold(el, keyCode) {
     const press = (e) => { e.preventDefault(); keys[keyCode] = true; el.classList.add('pressed'); };
@@ -348,7 +379,8 @@ if (isTouchDevice()) {
  
   bindHold(document.getElementById('leftBtn'), 'ArrowLeft');
   bindHold(document.getElementById('rightBtn'), 'ArrowRight');
-  bindHold(document.getElementById('thrustBtn'), 'ArrowUp');
+  bindHold(document.getElementById('upBtn'), 'ArrowUp');
+  bindHold(document.getElementById('downBtn'), 'ArrowDown');
  
   const fireBtn = document.getElementById('fireBtn');
   const firePress = (e) => {
@@ -368,8 +400,25 @@ if (isTouchDevice()) {
   fireBtn.addEventListener('mousedown', firePress);
   fireBtn.addEventListener('mouseup', fireRelease);
  
-  // unlock audio on first touch anywhere (mobile browsers require a user gesture)
-  document.body.addEventListener('touchstart', () => { getAudioCtx(); }, { once: true, passive: true });
+  // Reliable iOS/mobile audio unlock: require an explicit tap on an overlay,
+  // and create + resume + play a silent buffer synchronously inside that same gesture.
+  const tapOverlay = document.getElementById('tapOverlay');
+  tapOverlay.classList.add('active');
+ 
+  function unlockAudio() {
+    const ac = getAudioCtx();
+    // Play a near-silent buffer synchronously to fully unlock iOS Safari's audio pipeline
+    const buffer = ac.createBuffer(1, 1, 22050);
+    const src = ac.createBufferSource();
+    src.buffer = buffer;
+    src.connect(ac.destination);
+    src.start(0);
+    if (ac.state === 'suspended') ac.resume();
+    tapOverlay.classList.remove('active');
+  }
+ 
+  tapOverlay.addEventListener('touchstart', (e) => { e.preventDefault(); unlockAudio(); }, { passive: false });
+  tapOverlay.addEventListener('click', unlockAudio);
 }
  
 function launchOnTouch() {
@@ -393,25 +442,35 @@ function resetShip() {
 function update() {
   if (!running) return;
  
-  // Rotation
-  if (keys['ArrowLeft']) ship.angle -= 0.06;
-  if (keys['ArrowRight']) ship.angle += 0.06;
+  // Direct directional movement — pressing a direction moves the ship that way immediately.
+  let dx = 0, dy = 0;
+  if (keys['ArrowLeft'])  dx -= 1;
+  if (keys['ArrowRight']) dx += 1;
+  if (keys['ArrowUp'])    dy -= 1;
+  if (keys['ArrowDown'])  dy += 1;
  
-  // Thrust
-  ship.thrusting = !!keys['ArrowUp'];
-  if (ship.thrusting) {
-    ship.vx += Math.cos(ship.angle) * 0.12;
-    ship.vy += Math.sin(ship.angle) * 0.12;
+  const moving = dx !== 0 || dy !== 0;
+  ship.thrusting = moving;
+ 
+  if (moving) {
+    // normalize so diagonal movement isn't faster
+    const len = Math.hypot(dx, dy);
+    dx /= len; dy /= len;
+    ship.vx += dx * 0.5;
+    ship.vy += dy * 0.5;
+    // face the direction of travel
+    ship.angle = Math.atan2(dy, dx);
     startThrustSound();
   } else {
     stopThrustSound();
   }
+ 
   // Friction
-  ship.vx *= 0.99;
-  ship.vy *= 0.99;
+  ship.vx *= 0.9;
+  ship.vy *= 0.9;
   // Speed cap
   const spd = Math.hypot(ship.vx, ship.vy);
-  const maxSpd = 6;
+  const maxSpd = 5;
   if (spd > maxSpd) {
     ship.vx = ship.vx / spd * maxSpd;
     ship.vy = ship.vy / spd * maxSpd;
@@ -423,7 +482,7 @@ function update() {
  
   if (ship.invincible > 0) ship.invincible--;
  
-  // Firing
+  // Firing — always fires in the direction the ship is currently facing
   if (fireCooldown > 0) fireCooldown--;
   if (keys['Space'] && fireCooldown <= 0) {
     bullets.push({
